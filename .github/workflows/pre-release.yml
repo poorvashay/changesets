@@ -21,14 +21,15 @@ jobs:
         with:
           node-version: 18
           cache: 'npm'
+          registry-url: 'https://registry.npmjs.org/'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Apply manual version to package.json
+      - name: Set manual version using Changesets
         run: |
+          npx changeset version
           NEW_VERSION=${{ github.event.inputs.release_version }}
-          echo "Setting version to $NEW_VERSION"
           npm version $NEW_VERSION --no-git-tag-version
 
       - name: Commit version bump
@@ -37,8 +38,8 @@ jobs:
           git config user.email "${{ github.actor }}@users.noreply.github.com"
           git checkout -b release/manual-${{ github.event.inputs.release_version }}
           git add .
-          git commit -m "chore: bump version to ${{ github.event.inputs.release_version }} (triggered by ${{ github.actor }})"
-          git push origin HEAD   
+          git commit -m "chore: bump version to ${{ github.event.inputs.release_version }} (manual release by ${{ github.actor }})"
+          git push origin HEAD
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
@@ -47,3 +48,33 @@ jobs:
           body: "This PR bumps the version to `${{ github.event.inputs.release_version }}` manually via workflow_dispatch."
           base: main
           branch: release/manual-${{ github.event.inputs.release_version }}
+
+  build-and-publish:
+    needs: release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' # or use a condition that checks for a merged PR
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          registry-url: 'https://registry.npmjs.org/'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the project
+        run: |
+          cd ui
+          npm run build
+
+      - name: Publish to npm
+        run: |
+          cd ui
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
